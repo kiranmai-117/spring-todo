@@ -16,7 +16,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git url: 'https://your-repo-url.git', branch: 'main'
+                git url: 'git@github.com:kiranmai-117/spring-todo.git', branch: 'main'
             }
         }
 
