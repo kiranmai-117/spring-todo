@@ -110,18 +110,15 @@ pipeline {
             }
         }
 
-        stage('Collect Code Files') {
+        stage('Collect Code') {
             steps {
                 script {
-                    // Find files safely using shell
                     def files = sh(
                         script: "find . -type f \\( -name '*.java' -o -name '*.gradle' -o -name '*.yml' \\) ! -path '*/build/*'",
                         returnStdout: true
                     ).trim().split("\n")
 
-                    // SAFETY: avoid Groovy unsafe methods like take(), substring(), etc.
                     def selectedFiles = []
-
                     int limit = 10
                     int count = 0
 
@@ -136,12 +133,12 @@ pipeline {
                     }
 
                     env.FILE_LIST = selectedFiles.join(",")
-                    echo "Files collected: ${env.FILE_LIST}"
+                    echo "Files selected: ${env.FILE_LIST}"
                 }
             }
         }
 
-        stage('Read Files Content') {
+        stage('Build Review Payload') {
             steps {
                 script {
                     def reviewData = ""
@@ -152,7 +149,6 @@ pipeline {
                         if (filePath?.trim()) {
                             def content = readFile(filePath.trim())
 
-                            // SAFE truncation (NO take(), NO substring Groovy calls)
                             int maxLen = 500
                             if (content.length() > maxLen) {
                                 content = content.substring(0, maxLen)
@@ -164,32 +160,35 @@ pipeline {
                     }
 
                     env.CODE_FOR_REVIEW = reviewData
+
+                    // SAFE JSON payload (no escaping headaches)
+                    def payload = """
+{
+  "model": "llama3",
+  "prompt": "Review this code:\\n${reviewData}",
+  "stream": false
+}
+"""
+
+                    writeFile file: 'payload.json', text: payload
                 }
             }
         }
 
         stage('AI Code Review (Ollama)') {
             steps {
-                script {
-                    echo "Sending code to AI review engine..."
-
-                    // Example placeholder for Ollama API call
-                    sh """
-                        curl -s http://localhost:11434/api/generate \
-                        -d '{
-                            "model": "llama3",
-                            "prompt": "Review this code:\\n${env.CODE_FOR_REVIEW}",
-                            "stream": false
-                        }'
-                    """
-                }
+                sh '''
+                    curl -s http://localhost:11434/api/generate \
+                    -H "Content-Type: application/json" \
+                    -d @payload.json
+                '''
             }
         }
     }
 
     post {
         always {
-            echo "Pipeline finished"
+            echo "Pipeline completed"
         }
     }
 }
