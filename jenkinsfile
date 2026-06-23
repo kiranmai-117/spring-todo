@@ -8,13 +8,30 @@ pipeline {
 
     stages {
 
-        stage('Build') {
+        stage('Checkout') {
             steps {
-                   echo 'Build started'
-//                 sh './gradlew clean build'
+                checkout scm
             }
         }
 
+        stage('Build') {
+            steps {
+                echo 'Build started'
+                sh './gradlew clean build'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh './gradlew test'
+            }
+        }
+
+        stage('Archive') {
+            steps {
+                archiveArtifacts artifacts: 'build/libs/*.jar'
+            }
+        }
     }
 
     post {
@@ -23,7 +40,7 @@ pipeline {
         }
 
         failure {
-            echo 'Build was Failed'
+            echo 'Build Failed'
         }
     }
 }
