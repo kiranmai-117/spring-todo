@@ -151,7 +151,7 @@ Review this project for:
 Give actionable feedback per file.
 
 CODE:
-${code.take(12000)}
+${code.substring(0, Math.min(code.length(), 12000))}
 """
 
                     sh """
