@@ -145,7 +145,7 @@ pipeline {
             steps {
                 script {
                     def payload = [
-                        model: "llama3",
+                        model: "llama3.2:latest",
                         prompt: """
                         You are a senior software engineer.
                         Review this code and suggest improvements:
