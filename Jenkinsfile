@@ -101,12 +101,15 @@
 pipeline {
     agent any
 
+    environment {
+        GIT_REPO = 'https://github.com/kiranmai-117/spring-todo.git'
+    }
+
     stages {
 
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/kiranmai-117/spring-todo.git'
+                git branch: 'main', url: "${GIT_REPO}"
             }
         }
 
@@ -118,88 +121,63 @@ pipeline {
                         returnStdout: true
                     ).trim().split("\n")
 
-                    def selectedFiles = []
-                    int limit = 10
-                    int count = 0
+                    def codebase = ""
 
                     for (f in files) {
                         if (f?.trim()) {
-                            selectedFiles.add(f.trim())
-                            count++
-                            if (count >= limit) {
-                                break
+                            def content = readFile(f)
+
+                            // SAFE trimming (no Groovy take(), no unsafe methods)
+                            if (content.length() > 3000) {
+                                content = content.substring(0, 3000)
                             }
+
+                            codebase += "\n\n===== FILE: ${f} =====\n${content}"
                         }
                     }
 
-                    env.FILE_LIST = selectedFiles.join(",")
-                    echo "Selected files: ${env.FILE_LIST}"
-                }
-            }
-        }
-
-        stage('Build Code Context') {
-            steps {
-                script {
-                    def reviewData = ""
-
-                    def fileArray = env.FILE_LIST.split(",")
-
-                    for (filePath in fileArray) {
-                        if (filePath?.trim()) {
-                            def content = readFile(filePath.trim())
-
-                            // safe truncation (NO Groovy unsafe methods)
-                            int maxLen = 500
-                            if (content.length() > maxLen) {
-                                content = content.substring(0, maxLen)
-                            }
-
-                            reviewData += "\n\n===== ${filePath} =====\n"
-                            reviewData += content
-                        }
-                    }
-
-                    env.CODE_FOR_REVIEW = reviewData
-                    echo "Code context prepared"
-                }
-            }
-        }
-
-        stage('Create AI Payload') {
-            steps {
-                script {
-                    import groovy.json.JsonOutput
-
-                    def payloadMap = [
-                        model: "llama3",
-                        prompt: "Review this code:\n" + env.CODE_FOR_REVIEW,
-                        stream: false
-                    ]
-
-                    def jsonPayload = JsonOutput.toJson(payloadMap)
-
-                    writeFile file: 'payload.json', text: jsonPayload
-
-                    echo "Payload created successfully"
+                    env.CODE_FOR_REVIEW = codebase
                 }
             }
         }
 
         stage('AI Code Review (Ollama)') {
             steps {
-                sh '''
-                    curl -s http://localhost:11434/api/generate \
-                    -H "Content-Type: application/json" \
-                    -d @payload.json
-                '''
+                script {
+                    def payload = [
+                        model: "llama3",
+                        prompt: """
+                        You are a senior software engineer.
+                        Review this code and suggest improvements:
+
+                        ${env.CODE_FOR_REVIEW}
+                        """.stripIndent(),
+                        stream: false
+                    ]
+
+                    def json = groovy.json.JsonOutput.toJson(payload)
+
+                    writeFile file: 'request.json', text: json
+
+                    def response = sh(
+                        script: """
+                        curl -s http://localhost:11434/api/generate \
+                        -H "Content-Type: application/json" \
+                        -d @request.json
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    writeFile file: 'review.txt', text: response
+                    echo "AI Review completed"
+                }
             }
         }
     }
 
     post {
         always {
-            echo "Pipeline completed"
+            archiveArtifacts artifacts: 'review.txt', onlyIfSuccessful: false
         }
     }
 }
