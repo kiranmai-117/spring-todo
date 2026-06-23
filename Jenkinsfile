@@ -98,7 +98,6 @@
 // }
 //
 
-
 pipeline {
     agent any
 
@@ -106,29 +105,65 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git url: 'https://github.com/kiranmai-117/spring-todo.git', branch: 'main'
+                git branch: 'main',
+                    url: 'https://github.com/kiranmai-117/spring-todo.git'
             }
         }
 
-        stage('Collect Code') {
+        stage('Collect Code Files') {
             steps {
-                sh '''
-                find . -type f \\( -name "*.java" -o -name "*.gradle" -o -name "*.yml" \\) \
-                ! -path "*/build/*" > files.txt
-                '''
-
                 script {
-                    def files = readFile('files.txt').split("\n")
-                    def content = ""
+                    // Find files safely using shell
+                    def files = sh(
+                        script: "find . -type f \\( -name '*.java' -o -name '*.gradle' -o -name '*.yml' \\) ! -path '*/build/*'",
+                        returnStdout: true
+                    ).trim().split("\n")
 
-                    for (f in files.take(50)) {
+                    // SAFETY: avoid Groovy unsafe methods like take(), substring(), etc.
+                    def selectedFiles = []
+
+                    int limit = 10
+                    int count = 0
+
+                    for (f in files) {
                         if (f?.trim()) {
-                            content += "\n\n===== FILE: ${f} =====\n"
-                            content += sh(script: "cat ${f} || true", returnStdout: true)
+                            selectedFiles.add(f.trim())
+                            count++
+                            if (count >= limit) {
+                                break
+                            }
                         }
                     }
 
-                    writeFile file: 'code.txt', text: content
+                    env.FILE_LIST = selectedFiles.join(",")
+                    echo "Files collected: ${env.FILE_LIST}"
+                }
+            }
+        }
+
+        stage('Read Files Content') {
+            steps {
+                script {
+                    def reviewData = ""
+
+                    def fileArray = env.FILE_LIST.split(",")
+
+                    for (filePath in fileArray) {
+                        if (filePath?.trim()) {
+                            def content = readFile(filePath.trim())
+
+                            // SAFE truncation (NO take(), NO substring Groovy calls)
+                            int maxLen = 500
+                            if (content.length() > maxLen) {
+                                content = content.substring(0, maxLen)
+                            }
+
+                            reviewData += "\n\n===== ${filePath} =====\n"
+                            reviewData += content
+                        }
+                    }
+
+                    env.CODE_FOR_REVIEW = reviewData
                 }
             }
         }
@@ -136,33 +171,25 @@ pipeline {
         stage('AI Code Review (Ollama)') {
             steps {
                 script {
-                    def code = readFile('code.txt')
+                    echo "Sending code to AI review engine..."
 
-                    def prompt = """
-You are a senior Java Spring Boot reviewer.
-
-Review this project for:
-- code quality issues
-- Spring Boot best practices
-- security issues
-- performance problems
-- Gradle issues
-
-Give actionable feedback per file.
-
-CODE:
-${code.substring(0, Math.min(code.length(), 12000))}
-"""
-
+                    // Example placeholder for Ollama API call
                     sh """
-                    curl -s http://localhost:11434/api/generate -d '{
-                      "model": "llama3",
-                      "prompt": "${prompt.replace('"','\\"')}",
-                      "stream": false
-                    }'
+                        curl -s http://localhost:11434/api/generate \
+                        -d '{
+                            "model": "llama3",
+                            "prompt": "Review this code:\\n${env.CODE_FOR_REVIEW.replaceAll(\"\\\"\", \"\\\\\\\"\")}",
+                            "stream": false
+                        }'
                     """
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Pipeline finished"
         }
     }
 }
