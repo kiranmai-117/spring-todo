@@ -110,7 +110,7 @@ pipeline {
             }
         }
 
-        stage('Collect Code') {
+        stage('Collect Code Files') {
             steps {
                 script {
                     def files = sh(
@@ -133,12 +133,12 @@ pipeline {
                     }
 
                     env.FILE_LIST = selectedFiles.join(",")
-                    echo "Files selected: ${env.FILE_LIST}"
+                    echo "Selected files: ${env.FILE_LIST}"
                 }
             }
         }
 
-        stage('Build Review Payload') {
+        stage('Build Code Context') {
             steps {
                 script {
                     def reviewData = ""
@@ -149,6 +149,7 @@ pipeline {
                         if (filePath?.trim()) {
                             def content = readFile(filePath.trim())
 
+                            // safe truncation (NO Groovy unsafe methods)
                             int maxLen = 500
                             if (content.length() > maxLen) {
                                 content = content.substring(0, maxLen)
@@ -160,17 +161,27 @@ pipeline {
                     }
 
                     env.CODE_FOR_REVIEW = reviewData
+                    echo "Code context prepared"
+                }
+            }
+        }
 
-                    // SAFE JSON payload (no escaping headaches)
-                    def payload = """
-{
-  "model": "llama3",
-  "prompt": "Review this code:\\n${reviewData}",
-  "stream": false
-}
-"""
+        stage('Create AI Payload') {
+            steps {
+                script {
+                    import groovy.json.JsonOutput
 
-                    writeFile file: 'payload.json', text: payload
+                    def payloadMap = [
+                        model: "llama3",
+                        prompt: "Review this code:\n" + env.CODE_FOR_REVIEW,
+                        stream: false
+                    ]
+
+                    def jsonPayload = JsonOutput.toJson(payloadMap)
+
+                    writeFile file: 'payload.json', text: jsonPayload
+
+                    echo "Payload created successfully"
                 }
             }
         }
