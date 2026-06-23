@@ -9,7 +9,7 @@ pipeline {
                 echo 'Build started'
             }
         }
-        stage('Build') {
+        stage('show files') {
             steps {
                 sh 'ls'
             }
