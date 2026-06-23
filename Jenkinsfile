@@ -170,7 +170,8 @@ pipeline {
 
                     writeFile file: 'review.txt', text: response
                     echo "AI Review completed"
-                    sh "cat review.txt"
+                    echo "${response.response}"
+//                     sh "cat review.txt"
                 }
             }
         }
