@@ -178,7 +178,7 @@ pipeline {
                         curl -s http://localhost:11434/api/generate \
                         -d '{
                             "model": "llama3",
-                            "prompt": "Review this code:\\n${env.CODE_FOR_REVIEW.replaceAll(\"\\\"\", \"\\\\\\\"\")}",
+                            "prompt": "Review this code:\\n${env.CODE_FOR_REVIEW}",
                             "stream": false
                         }'
                     """
