@@ -89,6 +89,7 @@ pipeline {
 
     environment {
         MODEL = "ollama/qwen3:1.7b"
+        PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
     }
 
     stages {
