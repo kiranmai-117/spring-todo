@@ -1,51 +1,42 @@
 // pipeline {
 //     agent any
 //
-//     tools {
-//         jdk 'jdk25'
-//     }
-//
 //     environment {
-//         JAVA_HOME = tool 'jdk25'
-//         PATH = "${JAVA_HOME}/bin:${env.PATH}"
-//         OLLAMA_URL = "http://localhost:11434/api/generate"
-//         MODEL = "llama3"
+//         GIT_REPO = 'https://github.com/kiranmai-117/spring-todo.git'
 //     }
 //
 //     stages {
 //
 //         stage('Checkout') {
 //             steps {
-//                 git url: 'git@github.com:kiranmai-117/spring-todo.git', branch: 'main'
+//                 git branch: 'main', url: "${GIT_REPO}"
 //             }
 //         }
 //
-//         stage('Build') {
-//             steps {
-//                 sh './gradlew clean build'
-//             }
-//         }
-//
-//         stage('Collect Code Snapshot') {
+//         stage('Collect Code Files') {
 //             steps {
 //                 script {
-//                     // Collect key project files for review
-//                     sh '''
-//                     find . -type f \\( -name "*.java" -o -name "*.kt" -o -name "*.gradle" \\) \
-//                     ! -path "*/build/*" ! -path "*/.gradle/*" > code_files.txt
-//                     '''
+//                     def files = sh(
+//                         script: "find . -type f \\( -name '*.java' -o -name '*.gradle' -o -name '*.yml' \\) ! -path '*/build/*'",
+//                         returnStdout: true
+//                     ).trim().split("\n")
 //
-//                     def files = readFile('code_files.txt').split("\n")
-//                     def content = ""
+//                     def codebase = ""
 //
-//                     for (f in files.take(30)) {  // limit to avoid huge payload
+//                     for (f in files) {
 //                         if (f?.trim()) {
-//                             content += "\n\n===== FILE: ${f} =====\n"
-//                             content += sh(script: "cat ${f} || true", returnStdout: true)
+//                             def content = readFile(f)
+//
+//                             // SAFE trimming (no Groovy take(), no unsafe methods)
+//                             if (content.length() > 3000) {
+//                                 content = content.substring(0, 3000)
+//                             }
+//
+//                             codebase += "\n\n===== FILE: ${f} =====\n${content}"
 //                         }
 //                     }
 //
-//                     writeFile file: 'repo_snapshot.txt', text: content
+//                     env.CODE_FOR_REVIEW = codebase
 //                 }
 //             }
 //         }
@@ -53,38 +44,34 @@
 //         stage('AI Code Review (Ollama)') {
 //             steps {
 //                 script {
-//                     def repoContent = readFile('repo_snapshot.txt')
+//                     def payload = [
+//                         model: "llama3.2:latest",
+//                         prompt: """
+//                         You are a senior software engineer.
+//                         Review this code and suggest improvements:
 //
-//                     def prompt = """
-// You are a senior Java Spring Boot reviewer.
+//                         ${env.CODE_FOR_REVIEW}
+//                         """.stripIndent(),
+//                         stream: false
+//                     ]
 //
-// Review this code for:
-// - Java 25 compatibility issues
-// - Spring Boot best practices
-// - Gradle issues
-// - security issues
-// - performance problems
-// - bad coding patterns
+//                     def json = groovy.json.JsonOutput.toJson(payload)
 //
-// Give structured feedback with file-level suggestions.
-//
-// CODE:
-// ${repoContent.take(12000)}
-// """
+//                     writeFile file: 'request.json', text: json
 //
 //                     def response = sh(
 //                         script: """
-//                         curl -s ${OLLAMA_URL} -d '{
-//                           "model": "${MODEL}",
-//                           "prompt": "${prompt.replace("\"", "\\\"")}",
-//                           "stream": false
-//                         }'
+//                         curl -s http://localhost:11434/api/generate \
+//                         -H "Content-Type: application/json" \
+//                         -d @request.json
 //                         """,
 //                         returnStdout: true
-//                     )
+//                     ).trim()
 //
-//                     echo "===== AI CODE REVIEW ====="
-//                     echo response
+//                     writeFile file: 'review.txt', text: response
+//                     echo "AI Review completed"
+//                     echo "${response.response}"
+// //                     sh "cat review.txt"
 //                 }
 //             }
 //         }
@@ -92,94 +79,71 @@
 //
 //     post {
 //         always {
-//             archiveArtifacts artifacts: 'repo_snapshot.txt', allowEmptyArchive: true
+//             archiveArtifacts artifacts: 'review.txt', onlyIfSuccessful: false
 //         }
 //     }
 // }
-//
 
 pipeline {
     agent any
 
     environment {
-        GIT_REPO = 'https://github.com/kiranmai-117/spring-todo.git'
+        MODEL = "ollama/qwen3:1.7b"
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                git branch: 'main', url: "${GIT_REPO}"
+                git branch: 'main', url: 'https://github.com/your-org/your-repo.git'
             }
         }
 
-        stage('Collect Code Files') {
+        stage('Verify Tools') {
             steps {
-                script {
-                    def files = sh(
-                        script: "find . -type f \\( -name '*.java' -o -name '*.gradle' -o -name '*.yml' \\) ! -path '*/build/*'",
-                        returnStdout: true
-                    ).trim().split("\n")
+                sh '''
+                echo "Checking OpenCode..."
+                opencode --version || exit 1
 
-                    def codebase = ""
-
-                    for (f in files) {
-                        if (f?.trim()) {
-                            def content = readFile(f)
-
-                            // SAFE trimming (no Groovy take(), no unsafe methods)
-                            if (content.length() > 3000) {
-                                content = content.substring(0, 3000)
-                            }
-
-                            codebase += "\n\n===== FILE: ${f} =====\n${content}"
-                        }
-                    }
-
-                    env.CODE_FOR_REVIEW = codebase
-                }
+                echo "Checking Ollama models..."
+                ollama list
+                '''
             }
         }
 
-        stage('AI Code Review (Ollama)') {
+        stage('AI Code Analysis (Qwen3)') {
             steps {
-                script {
-                    def payload = [
-                        model: "llama3.2:latest",
-                        prompt: """
-                        You are a senior software engineer.
-                        Review this code and suggest improvements:
+                sh '''
+                opencode \
+                  --prompt "Analyze this project and give the summary of it" \
+                  > opencode_report.txt
+                '''
+            }
+        }
 
-                        ${env.CODE_FOR_REVIEW}
-                        """.stripIndent(),
-                        stream: false
-                    ]
+        stage('Show Report') {
+            steps {
+                sh '''
+                echo "===== Qwen3 OpenCode Report ====="
+                cat opencode_report.txt
+                '''
+            }
+        }
 
-                    def json = groovy.json.JsonOutput.toJson(payload)
-
-                    writeFile file: 'request.json', text: json
-
-                    def response = sh(
-                        script: """
-                        curl -s http://localhost:11434/api/generate \
-                        -H "Content-Type: application/json" \
-                        -d @request.json
-                        """,
-                        returnStdout: true
-                    ).trim()
-
-                    writeFile file: 'review.txt', text: response
-                    echo "AI Review completed"
-                    echo "${response.response}"
-//                     sh "cat review.txt"
-                }
+        stage('Archive Report') {
+            steps {
+                archiveArtifacts artifacts: 'opencode_report.txt', fingerprint: true
             }
         }
     }
 
     post {
-        always {
-            archiveArtifacts artifacts: 'review.txt', onlyIfSuccessful: false
+        success {
+            echo "Qwen3 AI analysis completed successfully"
+        }
+
+        failure {
+            echo "Pipeline failed during OpenCode execution"
         }
     }
 }
