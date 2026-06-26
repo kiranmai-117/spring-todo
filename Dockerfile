@@ -1,6 +1,9 @@
-# Dockerfile for spring-todo
-FROM node:18
+FROM eclipse-temurin:26-jre
+
 WORKDIR /app
-COPY . .
-RUN npm install
-CMD ["node", "server.js"]
+
+COPY build/libs/todo-0.0.1-SNAPSHOT.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT ["java","-jar","app.jar"]

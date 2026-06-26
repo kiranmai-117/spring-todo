@@ -116,7 +116,7 @@ pipeline {
             steps {
                 sh '''
                 opencode \
-                  --prompt "Analyze this project and give the summary of it" \
+                  --prompt "hello" \
                   > opencode_report.txt
                 '''
             }

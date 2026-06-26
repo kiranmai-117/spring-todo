@@ -4,4 +4,4 @@ spring:
   server:
     port:9000
   mongodb:
-    uri: ${TODO_MONGO_URI:"mongodb://localhost:27017"}
+    uri: "mongodb://localhost:27017/todo"
