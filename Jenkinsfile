@@ -116,7 +116,7 @@ pipeline {
             steps {
                 sh '''
                 opencode \
-                  run "Analyze this project. Detect bugs, security issues, performance problems, and suggest improvements." \
+                  run "hello" \
                   > opencode_report.txt
                 '''
             }
