@@ -115,12 +115,9 @@ pipeline {
         stage('AI Code Analysis (Qwen3)') {
             steps {
                 sh '''
-                set -x
-
-                opencode run "Analyze this project. Detect bugs, security issues, performance problems, and suggest improvements."
-
-                echo "Exit code: $?"
-                echo "Finished"
+                opencode run \
+                  --agent general \
+                  "Analyze this project. Detect bugs, security issues, and performance problems."
                 '''
             }
         }
